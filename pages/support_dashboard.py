@@ -1,93 +1,65 @@
-import matplotlib.pyplot as plt
 import streamlit as st
+from query_operations import fetch_queries, close_query
 import pandas as pd
 
-from query_operations import (
-    fetch_queries,
-    fetch_queries_by_status,
-    close_query
-)
+st.set_page_config(page_title="Support Dashboard", layout="wide")
 
-st.title("Support Team Dashboard")
+# Initialize session state
+if 'logged_in_user' not in st.session_state:
+    st.session_state.logged_in_user = None
 
-# Filter option
-filter_option = st.selectbox(
-    "Filter Queries",
-    ["All", "Open", "Closed"]
-)
+if st.session_state.logged_in_user is None:
+    st.error("Please login first")
+    st.stop()
 
-# Fetch data
-if filter_option == "All":
-    data = fetch_queries()
+if st.session_state.logged_in_user[3] != "Support":
+    st.error("Access denied")
+    st.stop()
 
-else:
-    data = fetch_queries_by_status(filter_option)
+user = st.session_state.logged_in_user
+st.title(f"Support Dashboard - {user[1]}")
 
-# Convert to DataFrame
-df = pd.DataFrame(
-    data,
-    columns=[
-        "Query ID",
-        "Mail ID",
-        "Mobile Number",
-        "Query Heading",
-        "Query Description",
-        "Status",
-        "Created Time",
-        "Closed Time"
-    ]
-)
+if st.button("Logout"):
+    st.session_state.logged_in_user = None
+    st.switch_page("app.py")
 
-st.dataframe(df)
+st.divider()
 
-# ---------------- ANALYTICS ---------------- #
-
-st.subheader("Query Analytics")
-
-total_queries = len(df)
-
-open_queries = len(df[df["Status"] == "Open"])
-
-closed_queries = len(df[df["Status"] == "Closed"])
-
-col1, col2, col3 = st.columns(3)
-
-col1.metric("Total Queries", total_queries)
-
-col2.metric("Open Queries", open_queries)
-
-col3.metric("Closed Queries", closed_queries)
-
-# Pie Chart
-
-labels = ["Open", "Closed"]
-
-sizes = [open_queries, closed_queries]
-
-# Prevent pie chart crash when values are zero
-if sum(sizes) > 0:
-
-    fig, ax = plt.subplots()
-
-    ax.pie(
-        sizes,
-        labels=labels,
-        autopct='%1.1f%%'
-    )
-
-    ax.axis('equal')
-
-    st.pyplot(fig)
-
-else:
-    st.warning("No query data available for analytics.")
-
-st.subheader("Close Query")
-
-query_id = st.text_input("Enter Query ID")
-
-if st.button("Close Query"):
-
-    close_query(query_id)
-
-    st.success("Query Closed Successfully")
+try:
+    all_queries = fetch_queries()
+    
+    total = len(all_queries)
+    open_q = len([q for q in all_queries if q[5] == "Open"])
+    closed_q = len([q for q in all_queries if q[5] == "Closed"])
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total", total)
+    col2.metric("Open", open_q)
+    col3.metric("Closed", closed_q)
+    
+    st.divider()
+    
+    status_filter = st.selectbox("Filter", ["All", "Open", "Closed"])
+    
+    filtered = all_queries
+    if status_filter != "All":
+        filtered = [q for q in all_queries if q[5] == status_filter]
+    
+    if filtered:
+        df = pd.DataFrame(filtered, columns=["ID", "Email", "Mobile", "Heading", "Description", "Status", "Created", "Closed"])
+        st.dataframe(df, use_container_width=True)
+        
+        st.subheader("Close Query")
+        query_id = st.text_input("Enter Query ID")
+        if st.button("Close"):
+            if query_id:
+                try:
+                    close_query(query_id)
+                    st.success("Closed!")
+                    st.rerun()
+                except:
+                    st.error("Error closing")
+    else:
+        st.info("No queries")
+except Exception as e:
+    st.error(f"Error: {str(e)}")
